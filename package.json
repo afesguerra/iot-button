@@ -2,7 +2,7 @@
   "name": "iot",
   "version": "0.1.0",
   "bin": {
-    "iot": "bin/iot.js"
+    "iot": "bin/app.js"
   },
   "scripts": {
     "build": "tsc",
