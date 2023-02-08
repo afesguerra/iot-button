@@ -1,10 +1,28 @@
-import {CfnParameter, Stack, StackProps} from 'aws-cdk-lib';
-import {CfnPolicy, CfnPolicyPrincipalAttachment, CfnThing, CfnThingPrincipalAttachment,} from 'aws-cdk-lib/aws-iot'
+import {Arn, ArnFormat, CfnParameter, Stack, StackProps} from 'aws-cdk-lib';
+import {
+  CfnPolicy,
+  CfnPolicyPrincipalAttachment,
+  CfnThing,
+  CfnThingPrincipalAttachment,
+  CfnTopicRule
+} from 'aws-cdk-lib/aws-iot'
 import {Construct} from 'constructs';
 import {Effect, PolicyDocument, PolicyStatement} from "aws-cdk-lib/aws-iam";
+import {IFunction} from "aws-cdk-lib/aws-lambda";
 
+enum ClickType {
+  SINGLE = 'single',
+  DOUBLE = 'double',
+  LONG = 'long',
+}
+
+interface IoTButtonProps extends StackProps{
+  singlePressFunction?: IFunction;
+  doublePressFunction?: IFunction;
+  longPressFunction?: IFunction;
+}
 export class IoTButtonStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props?: IoTButtonProps) {
     super(scope, id, props);
 
     const buttonSerial = new CfnParameter(this, 'buttonSerial', {
@@ -18,7 +36,12 @@ export class IoTButtonStack extends Stack {
     })
 
     const topic = `iotbutton/${buttonSerial.valueAsString}`;
-    const topicArn = `arn:aws:iot:${props?.env?.region}:${props?.env?.account}:topic/${topic}`;
+    const topicArn = Arn.format({
+      service: 'iot',
+      resource: 'topic',
+      resourceName: topic,
+      arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+    }, this);
 
     const button = new CfnThing(this, 'IoTButton', {
       thingName: buttonSerial.valueAsString
@@ -53,5 +76,31 @@ export class IoTButtonStack extends Stack {
     });
 
     thingPrincipalAttachment.addDependency(button);
+
+    if (props?.singlePressFunction) {
+      this.addRule(props.singlePressFunction, topic, buttonSerial.valueAsString, ClickType.SINGLE);
+    }
+
+    if (props?.doublePressFunction) {
+      this.addRule(props.doublePressFunction, topic, buttonSerial.valueAsString, ClickType.DOUBLE);
+    }
+
+    if (props?.longPressFunction) {
+      this.addRule(props.longPressFunction, topic, buttonSerial.valueAsString, ClickType.LONG);
+    }
+  }
+
+  private addRule(lambdaFunction: IFunction, topic: string, buttonSerial: string, clickType: ClickType) {
+    this.addDependency(Stack.of(lambdaFunction));
+
+    new CfnTopicRule(this, `${clickType}-press-rule`, {
+      ruleName: `${buttonSerial}_${clickType}_press`,
+      topicRulePayload: {
+        sql: `SELECT clickType FROM '${topic}' WHERE clickType = '${clickType.toUpperCase()}'`,
+        actions: [
+          {lambda: {functionArn: lambdaFunction.functionArn}},
+        ]
+      },
+    });
   }
 }
