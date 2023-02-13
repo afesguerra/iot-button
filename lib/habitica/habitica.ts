@@ -1,11 +1,11 @@
 import {Construct} from "constructs";
 import {CfnParameter, Duration, Stack, StackProps} from "aws-cdk-lib";
 import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs";
-import {IFunction, Runtime} from "aws-cdk-lib/aws-lambda";
+import {Runtime} from "aws-cdk-lib/aws-lambda";
 import {Vpc} from "aws-cdk-lib/aws-ec2";
+import {ClickType, IotButton} from "../iot/iot-button";
 
 export class HabiticaStack extends Stack {
-  readonly scopeUpTask: IFunction;
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
@@ -24,8 +24,18 @@ export class HabiticaStack extends Stack {
       description: 'UserID provided by Habitica',
     });
 
+    const buttonSerial = new CfnParameter(this, 'buttonSerial', {
+      type: 'String',
+      description: 'Serial of the IoT Button to use',
+      allowedPattern: /\w{16}/.source
+    })
+    const certificateArn = new CfnParameter(this, 'certificateArn', {
+      type: 'String',
+      description: 'ARN of the IoT Certificate to use',
+    })
+
     const vpc = new Vpc(this, 'habitica-vpc');
-    this.scopeUpTask = new NodejsFunction(this, 'score-up', {
+    const scopeUpTask = new NodejsFunction(this, 'score-up', {
       vpc: vpc,
       allowAllOutbound: true,
       runtime: Runtime.NODEJS_18_X,
@@ -35,6 +45,12 @@ export class HabiticaStack extends Stack {
         'userId': userId.valueAsString,
         'taskId': taskId.valueAsString,
       },
+    });
+
+    new IotButton(this, "IoTButton", {
+      buttonSerial: buttonSerial.valueAsString,
+      certificateArn: certificateArn.valueAsString,
+      actions: {[ClickType.SINGLE]: scopeUpTask},
     });
   }
 }
